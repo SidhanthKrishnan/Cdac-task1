@@ -23,6 +23,7 @@
 module tb_D_latch();
   reg d, e;
   wire q, q_bar;
+  reg [2:0] vec;
   D_latch uut (
     .d(d),
     .e(e),
@@ -31,7 +32,8 @@ module tb_D_latch();
   );
 
   initial begin
-    for({e,d}=2'b00;{e,d}<=2'b11;{e,d}={e,d}+2'b01)begin
+    for (vec = 3'b000; vec <= 3'b011; vec = vec + 1) begin
+      {e,d}=vec[1:0];
     #10;
     end
    $finish;

@@ -21,5 +21,5 @@
 
 
 module T_latch(input t,input e,output q,output q_bar);
-JK_latch m0(.j(t),.k(~t),.e(e),.q(q),.q_bar(q_bar));
+JK_latch m0(.j(t),.k(t),.e(e),.q(q),.q_bar(q_bar));
 endmodule

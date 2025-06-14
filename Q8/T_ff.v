@@ -2,10 +2,10 @@
 module T_ff(input t, input clk, input pr, input cr, output reg q, output q_bar);
   assign q_bar = ~q;
 
-  always @(posedge clk or posedge pr or posedge cr) begin
-    if (cr)
+  always @(posedge clk or negedge pr or negedge cr) begin
+    if (!cr)
       q <= 0;
-    else if (pr)
+    else if (!pr)
       q <= 1;
     else if (t)
       q <= ~q;

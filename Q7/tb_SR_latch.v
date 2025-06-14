@@ -23,6 +23,7 @@
 module tb_SR_LATCH();
   reg s, r, e;
   wire q, q_bar;
+  reg [3:0] vec;
   SR_LATCH uut (
     .s(s),
     .r(r),
@@ -32,7 +33,8 @@ module tb_SR_LATCH();
   );
 
   initial begin
-    for({e,s,r}=3'b000;{e,s,r}<=3'b111;{e,s,r}={e,s,r}+3'b001)begin
+    for (vec = 4'b0000; vec <= 4'b0111; vec = vec + 1) begin
+      {e,s,r}=vec[2:0];
     #10;
     end
     $finish;

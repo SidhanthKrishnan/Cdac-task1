@@ -1,25 +1,37 @@
 `timescale 1ns / 1ps
+module moore_10101_nov(
+  input clk,
+  input reset,
+  input in,
+  output reg out
+);
 
-// Mealy FSM for 10011 overlapping
+  typedef enum reg [2:0] {
+    S0, S1, S2, S3, S4, S5
+  } state_t;
 
+  state_t state, next_state;
 
-
-// Mealy FSM for 10101 overlapping
-module mealy_10101_ov(input clk, input rst, input in, output reg out);
-  reg [2:0] state, next;
-  parameter S0=0, S1=1, S2=2, S3=3, S4=4;
-  always @(posedge clk or posedge rst) begin
-    if (rst) state <= S0;
-    else state <= next;
+  always @(posedge clk or posedge reset) begin
+    if (reset)
+      state <= S0;
+    else
+      state <= next_state;
   end
+
   always @(*) begin
-    out = 0;
     case (state)
-      S0: next = in ? S1 : S0;
-      S1: next = in ? S1 : S2;
-      S2: next = in ? S3 : S0;
-      S3: next = in ? S4 : S2;
-      S4: begin next = in ? S1 : S0; out = ~in; end
+      S0: next_state = (in == 1) ? S1 : S0;
+      S1: next_state = (in == 0) ? S2 : S1;
+      S2: next_state = (in == 1) ? S3 : S0;
+      S3: next_state = (in == 0) ? S4 : S1;
+      S4: next_state = (in == 1) ? S5 : S0;
+      S5: next_state = (in == 1) ? S1 : S0;
+      default: next_state = S0;
     endcase
+  end
+
+  always @(*) begin
+    out = (state == S5) ? 1 : 0;
   end
 endmodule

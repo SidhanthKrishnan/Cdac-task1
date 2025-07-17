@@ -1,5 +1,5 @@
 // rv16_alu.v
-// Arithmetic Logic Unit for RV16
+// Arithmetic Logic Unit for RV16 with MUL support
 module rv16_alu (
     input wire [31:0] i_operand_a,
     input wire [31:0] i_operand_b,
@@ -77,6 +77,12 @@ module rv16_alu (
                 
             4'b1111: // BGEU
                 o_result = (i_operand_a >= i_operand_b) ? 32'h1 : 32'h0;
+
+            4'b1010: begin // MUL (new in M extension)
+                o_result = i_operand_a * i_operand_b;
+                o_overflow = 1'b0;
+                o_carry = 1'b0;
+            end
                 
             default:
                 o_result = 32'h0;

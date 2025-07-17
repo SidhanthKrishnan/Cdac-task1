@@ -50,7 +50,7 @@ module rv16_ide_stage_tb;
     // Clock generation
     initial begin
         clk = 0;
-        forever #5 clk = ~clk; // 100 MHz clock
+        forever #5 clk = ~clk;
     end
 
     // Reset sequence
@@ -65,44 +65,68 @@ module rv16_ide_stage_tb;
         rst_n = 1;
     end
 
-    // Simple instruction memory (only provide MUL instruction at PC=0)
-    localparam MUL_INSTR = 32'b0000001_00010_00001_000_00011_0110011; 
-    // encodes: mul x3, x1, x2 (funct7=0000001, rs2=2, rs1=1, rd=3, opcode=0110011)
+    // Instruction encoding (RISC-V I-type & R-type)
+    localparam ADD_INSTR = 32'b0000000_00010_00001_000_00011_0110011; // add x3, x1, x2
+    localparam SUB_INSTR = 32'b0100000_00010_00001_000_00011_0110011; // sub x3, x1, x2
+    localparam MUL_INSTR = 32'b0000001_00010_00001_000_00011_0110011; // mul x3, x1, x2
+    localparam AND_INSTR = 32'b0000000_00010_00001_111_00011_0110011; // and x3, x1, x2
+    localparam OR_INSTR  = 32'b0000000_00010_00001_110_00011_0110011; // or x3, x1, x2
+    localparam LW_INSTR  = 32'b000000000100_00001_010_00011_0000011;  // lw x3, 4(x1)
+    localparam SW_INSTR  = 32'b0000000_00011_00001_010_00100_0100011; // sw x3, 4(x1)
+
+    // Simulate instruction memory
+    reg [31:0] instr_mem [0:15];
+
+    initial begin
+        instr_mem[0] = ADD_INSTR;
+        instr_mem[1] = SUB_INSTR;
+        instr_mem[2] = MUL_INSTR;
+        instr_mem[3] = LW_INSTR;
+        instr_mem[4] = MUL_INSTR;
+        instr_mem[5] = SW_INSTR;
+        instr_mem[6] = OR_INSTR;
+        instr_mem[7] = MUL_INSTR;
+        instr_mem[8] = AND_INSTR;
+    end
 
     reg [31:0] pc_hold;
+    integer instr_index;
 
     always @(posedge clk) begin
         if (!rst_n) begin
             pc_hold <= 0;
             i_fetch_valid <= 0;
+            instr_index <= 0;
         end else if (!o_stall) begin
             i_pc <= pc_hold;
-            if (pc_hold == 32'h0) begin
-                i_fetch_data <= MUL_INSTR;
+            if (instr_index < 9) begin
+                i_fetch_data <= instr_mem[instr_index];
                 i_fetch_valid <= 1;
+                $display("Cycle %0t: Fetching instr[%0d] = %h", $time, instr_index, instr_mem[instr_index]);
+                pc_hold <= pc_hold + 4;
+                instr_index <= instr_index + 1;
             end else begin
                 i_fetch_valid <= 0;
             end
-            pc_hold <= pc_hold + 4;
         end
     end
 
-    // Monitor pipeline stalls due to MUL multi-cycle op
+    // Pipeline tracking
     integer cycle_count = 0;
 
     always @(posedge clk) begin
         cycle_count = cycle_count + 1;
         if (cycle_count == 1)
-            $display("Starting MUL test...");
+            $display("Starting comprehensive instruction test...");
+
         if (o_stall)
-            $display("Cycle %0d: Pipeline stalled (likely MUL in progress)", cycle_count);
+            $display("Cycle %0d: Pipeline stalled", cycle_count);
+
         if (o_pc_update)
             $display("Cycle %0d: PC updated to %h", cycle_count, o_next_pc);
-        if (!o_stall && cycle_count > 5)
-            $finish;  // end simulation after some cycles post MUL
-    end
 
-    // After simulation ends, check register file x3 value (assumed available via debug or separate logic)
-    // You could add a readback port to register file for checking the result
+        if (!o_stall && instr_index >= 9 && cycle_count > 20)
+            $finish;
+    end
 
 endmodule

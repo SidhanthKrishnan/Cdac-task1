@@ -1,5 +1,5 @@
 // rv16_alu.v
-// ALU with multi-cycle "fast" 3-step MUL support for RV16
+// ALU with multi-cycle 3-step MUL support for RV16 fast multiplier
 
 module rv16_alu (
     input  wire        clk,
@@ -16,27 +16,28 @@ module rv16_alu (
     output wire        o_mul_done
 );
 
-    // Basic ALU arithmetic
+    // Arithmetic logic
     wire [32:0] add_result = {1'b0, i_operand_a} + {1'b0, i_operand_b};
     wire [32:0] sub_result = {1'b0, i_operand_a} - {1'b0, i_operand_b};
     assign o_zero = (o_result == 32'h0);
 
-    // Internal MUL handshake and result
+    // MUL control
     reg mul_start_r;
     wire mul_start_pulse;
     wire [31:0] mul_result;
-    wire mul_done, mul_busy;
+    wire mul_busy, mul_done;
 
-    // Pulse generator for MUL start (one cycle only)
+    // Single-cycle pulse generator for MUL start
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             mul_start_r <= 1'b0;
         else
             mul_start_r <= i_mul_start;
     end
+
     assign mul_start_pulse = i_mul_start & ~mul_start_r;
 
-    // Instantiate multi-cycle 3-step MUL unit
+    // Instantiate fast multiplier
     rv16_mul_unit mul_unit (
         .clk(clk),
         .rst_n(rst_n),
@@ -51,11 +52,12 @@ module rv16_alu (
     assign o_mul_busy = mul_busy;
     assign o_mul_done = mul_done;
 
-    // Main ALU operation
+    // Main ALU operations
     always @(*) begin
         o_result = 32'h0;
         o_overflow = 1'b0;
         o_carry = 1'b0;
+
         case (i_alu_op)
             4'b0000: begin // ADD
                 o_result = add_result[31:0];
@@ -67,15 +69,15 @@ module rv16_alu (
                 o_carry = sub_result[32];
                 o_overflow = (i_operand_a[31] != i_operand_b[31]) && (o_result[31] != i_operand_a[31]);
             end
-            4'b0001: o_result = i_operand_a << i_operand_b[4:0]; // SLL
+            4'b0001: o_result = i_operand_a << i_operand_b[4:0];       // SLL
             4'b0010: o_result = ($signed(i_operand_a) < $signed(i_operand_b)) ? 32'h1 : 32'h0; // SLT
             4'b0011: o_result = (i_operand_a < i_operand_b) ? 32'h1 : 32'h0; // SLTU
-            4'b0100: o_result = i_operand_a ^ i_operand_b; // XOR
-            4'b0101: o_result = i_operand_a >> i_operand_b[4:0]; // SRL
+            4'b0100: o_result = i_operand_a ^ i_operand_b;             // XOR
+            4'b0101: o_result = i_operand_a >> i_operand_b[4:0];       // SRL
             4'b1101: o_result = $signed(i_operand_a) >>> i_operand_b[4:0]; // SRA
-            4'b0110: o_result = i_operand_a | i_operand_b; // OR
-            4'b0111: o_result = i_operand_a & i_operand_b; // AND
-            4'b1010: o_result = mul_result; // MUL (multi-cycle)
+            4'b0110: o_result = i_operand_a | i_operand_b;             // OR
+            4'b0111: o_result = i_operand_a & i_operand_b;             // AND
+            4'b1010: o_result = mul_result;                            // MUL
             default: o_result = 32'h0;
         endcase
     end

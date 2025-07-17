@@ -1,5 +1,3 @@
-// rv16_ide_stage.v
-// Top-level Instruction Decode Execute stage
 module rv16_ide_stage (
     input wire clk,
     input wire rst_n,
@@ -27,7 +25,7 @@ module rv16_ide_stage (
     output wire o_flush
 );
 
-    // Internal signals
+    // Internal signals for instruction
     wire [31:0] aligned_instr;
     wire instr_valid;
     wire is_compressed;
@@ -39,12 +37,10 @@ module rv16_ide_stage (
     wire [6:0] funct7;
     wire [4:0] rs1, rs2, rd;
     wire [31:0] immediate;
-    
-    // Control signals
     wire reg_write, mem_read, mem_write, branch, jump, alu_src, mem_to_reg;
     wire [3:0] alu_op;
     wire [1:0] pc_src;
-    
+
     // Register file signals
     wire [31:0] rs1_data, rs2_data;
     wire [31:0] rd_data;
@@ -53,12 +49,9 @@ module rv16_ide_stage (
     wire [31:0] alu_operand_a, alu_operand_b;
     wire [31:0] alu_result;
     wire alu_zero, alu_overflow, alu_carry;
+    wire alu_mul_busy, alu_mul_done;
     
-    // Address generation
-    wire [31:0] mem_addr;
-    wire [31:0] next_pc;
-    
-    // Branch decision
+    wire [31:0] mem_addr, next_pc;
     wire branch_taken;
     
     // CSR signals
@@ -66,13 +59,16 @@ module rv16_ide_stage (
     wire [31:0] csr_wdata, csr_rdata;
     wire [2:0] csr_op;
     wire csr_valid, csr_ready;
-    
+
     // Pipeline registers
     reg [31:0] execute_pc;
     reg [31:0] execute_instr;
     reg execute_valid;
-    
-    // Instruction alignment
+
+    // MUL wait tracking
+    reg wait_mul_completion;
+
+    // Instruction alignment (unchanged)
     rv16_instruction_align align_unit (
         .clk(clk),
         .rst_n(rst_n),
@@ -84,8 +80,9 @@ module rv16_ide_stage (
         .o_is_compressed(is_compressed),
         .o_next_pc(align_next_pc)
     );
-    
-    // Instruction decoder
+
+
+    // Instruction decoder (unchanged)
     rv16_decoder decoder (
         .i_instruction(aligned_instr),
         .i_is_compressed(is_compressed),
@@ -106,8 +103,15 @@ module rv16_ide_stage (
         .o_mem_to_reg(mem_to_reg),
         .o_pc_src(pc_src)
     );
-    
-    // Register file
+
+    // Register file, with gated write on mul completion
+    wire reg_write_final;
+    assign reg_write_final = reg_write &&
+        (
+            (alu_op != 4'b1010) ||                   // not MUL
+            (alu_op == 4'b1010 && alu_mul_done)      // MUL done
+        ) && execute_valid;
+
     rv16_register_file regfile (
         .clk(clk),
         .rst_n(rst_n),
@@ -117,24 +121,30 @@ module rv16_ide_stage (
         .o_rs2_data(rs2_data),
         .i_rd_addr(rd),
         .i_rd_data(rd_data),
-        .i_write_enable(reg_write && execute_valid)
+        .i_write_enable(reg_write_final)
     );
-    
-    // ALU
+
+    // ALU operand selection
     assign alu_operand_a = rs1_data;
     assign alu_operand_b = alu_src ? immediate : rs2_data;
-    
+
+    // ALU: instantiate with MUL control
     rv16_alu alu (
+        .clk(clk),
+        .rst_n(rst_n),
         .i_operand_a(alu_operand_a),
         .i_operand_b(alu_operand_b),
         .i_alu_op(alu_op),
+        .i_mul_start(execute_valid && alu_op == 4'b1010 && !wait_mul_completion),
         .o_result(alu_result),
         .o_zero(alu_zero),
         .o_overflow(alu_overflow),
-        .o_carry(alu_carry)
+        .o_carry(alu_carry),
+        .o_mul_busy(alu_mul_busy),
+        .o_mul_done(alu_mul_done)
     );
-    
-    // Address generator
+
+    // Address generator (unchanged)
     rv16_address_gen addr_gen (
         .i_pc(execute_pc),
         .i_rs1_data(rs1_data),
@@ -144,13 +154,13 @@ module rv16_ide_stage (
         .o_next_pc(next_pc),
         .o_mem_addr(mem_addr)
     );
-    
-    // CSR module
+
+    // CSR module (unchanged)
     assign csr_addr = immediate[11:0];
     assign csr_wdata = rs1_data;
     assign csr_op = funct3;
     assign csr_valid = (opcode == 7'b1110011) && execute_valid;
-    
+
     rv16_csr csr_unit (
         .clk(clk),
         .rst_n(rst_n),
@@ -161,8 +171,8 @@ module rv16_ide_stage (
         .o_csr_rdata(csr_rdata),
         .o_csr_ready(csr_ready)
     );
-    
-    // Branch decision logic
+
+    // Branch decision logic (unchanged)
     assign branch_taken = branch && (
         (funct3 == 3'b000 && alu_zero) ||      // BEQ
         (funct3 == 3'b001 && !alu_zero) ||     // BNE
@@ -171,16 +181,16 @@ module rv16_ide_stage (
         (funct3 == 3'b110 && alu_result[0]) || // BLTU
         (funct3 == 3'b111 && !alu_result[0])   // BGEU
     );
-    
-    // Write-back data selection
+
+    // Write-back data selection (unchanged, ALU result valid after MUL done)
     assign rd_data = csr_valid ? csr_rdata :
                     mem_to_reg ? i_mem_rdata :
                     (jump || branch_taken) ? (execute_pc + 4) :
                     (opcode == 7'b0110111) ? immediate :  // LUI
                     (opcode == 7'b0010111) ? (execute_pc + immediate) : // AUIPC
                     alu_result;
-    
-    // Pipeline control
+
+    // Pipeline control/update
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             execute_pc <= 32'h0;
@@ -192,7 +202,23 @@ module rv16_ide_stage (
             execute_valid <= instr_valid;
         end
     end
-    
+
+    // Wait-for-MUL logic
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            wait_mul_completion <= 1'b0;
+        end else begin
+            if (execute_valid && alu_op == 4'b1010) begin
+                if (!wait_mul_completion)
+                    wait_mul_completion <= 1'b1;
+                else if (alu_mul_done)
+                    wait_mul_completion <= 1'b0;
+            end else begin
+                wait_mul_completion <= 1'b0;
+            end
+        end
+    end
+
     // Output assignments
     assign o_mem_addr = mem_addr;
     assign o_mem_wdata = rs2_data;
@@ -201,7 +227,7 @@ module rv16_ide_stage (
     assign o_mem_size = funct3; // Size encoding from funct3
     assign o_next_pc = next_pc;
     assign o_pc_update = (branch_taken || jump) && execute_valid;
-    assign o_stall = (mem_read || mem_write) && !i_mem_ready;
+    assign o_stall = (wait_mul_completion) || ((mem_read || mem_write) && !i_mem_ready);
     assign o_flush = o_pc_update;
 
 endmodule

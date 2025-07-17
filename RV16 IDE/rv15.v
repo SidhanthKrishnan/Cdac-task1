@@ -1,5 +1,5 @@
 // rv16_decoder.v
-// Decodes RISC-V instructions and generates control signals
+// Decodes RISC-V instructions and generates control signals with MUL support
 module rv16_decoder (
     input wire [31:0] i_instruction,
     input wire i_is_compressed,
@@ -61,7 +61,19 @@ module rv16_decoder (
             7'b0110011: begin // R-type
                 o_reg_write = 1'b1;
                 o_alu_src = 1'b0;
-                o_alu_op = {o_funct7[5], o_funct3};
+                
+                if (o_funct7 == 7'b0000001) begin
+                    // M-extension instructions
+                    case (o_funct3)
+                        3'b000: o_alu_op = 4'b1010; // MUL (new)
+                        // You can add more M-extension instructions here, e.g., DIV, MULH etc.
+                        default: o_alu_op = 4'b0000; // Default, treat as ADD or NOP
+                    endcase
+                end
+                else begin
+                    // Regular R-type ALU operation mapping using funct7[5], funct3
+                    o_alu_op = {o_funct7[5], o_funct3};
+                end
             end
             
             7'b0010011: begin // I-type (immediate)
